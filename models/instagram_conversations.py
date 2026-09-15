@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, Boolean
+from sqlalchemy import Column, Integer, BigInteger, String, Text, DateTime, ForeignKey, Boolean
 from sqlalchemy.orm import relationship
 from models import Base
 from models import TimestampMixin
@@ -11,7 +11,7 @@ class InstagramConversationSummary(Base, TimestampMixin):
     id = Column(Integer, primary_key=True, autoincrement=True)
     instagram_username = Column(String(255), nullable=False, index=True)
     instagram_user_id = Column(Integer, ForeignKey("instagram_users.id"))
-    deal_id = Column(Integer, ForeignKey('deals.id'), nullable=False, index=True)
+    deal_id = Column(BigInteger, ForeignKey('deals.id'), nullable=False, index=True)
     deals_conversation_summary = Column(Text, nullable=True)
     is_active = Column(Boolean, default=True, nullable=False)
     

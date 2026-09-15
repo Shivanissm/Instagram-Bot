@@ -111,6 +111,7 @@ class Deal(Base, TimestampMixin):
     venue_asked = Column(Boolean, nullable=True, default=False)
     venue_received = Column(Boolean, nullable=True, default=False)
     is_deleted = Column(SmallInteger, nullable=False, default=0)
+    reentered_via_direct_message = Column(Boolean, nullable=False, default=False)
     
     # Relationships
     conversation_summaries = relationship("InstagramConversationSummary", back_populates="deal")

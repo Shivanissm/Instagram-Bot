@@ -28,6 +28,33 @@ from models.deal import Deal
 from models.processed_message import ProcessedMessage
 from repository.conversation_repository import ConversationRepository
 from services.instagram_service import send_instagram_message, get_instagram_username, checkIfUserIsAlreadyContactedOrFriend, send_initial_greetings_message
+
+
+def _default_ai_service_config(
+    brideside_user_id: int = 1,
+    business_name: str = "",
+    services: Optional[list] = None,
+) -> dict:
+    """Prefer Groq when GROQ_API_KEY is set; otherwise fall back to OpenAI."""
+    if GROQ_API_KEY:
+        return {
+            "service_name": "groq",
+            "api_key": GROQ_API_KEY,
+            "model": GROQ_MODEL or "allam-2-7b",
+            "brideside_user_id": brideside_user_id,
+            "business_name": business_name,
+            "services": services or [],
+        }
+    return {
+        "service_name": "openai",
+        "api_key": OPENAI_API_KEY or "",
+        "model": OPENAI_MODEL or "gpt-4o-mini",
+        "brideside_user_id": brideside_user_id,
+        "business_name": business_name,
+        "services": services or [],
+    }
+
+
 def _get_category_id_from_organization(organization_id: int) -> Optional[int]:
     """
     Helper function to get category_id from organization.
@@ -374,15 +401,7 @@ def _should_skip_message(sender_id: str, recipient_id: str, message_text: str, m
     
     # Create a basic AI service instance for utility functions
     from services.ai_service_factory import AIServiceFactory
-    basic_service_config = {
-        'service_name': 'openai',
-        'api_key': OPENAI_API_KEY or "",
-        'model': OPENAI_MODEL or "gpt-4o-mini",
-        'brideside_user_id': 1,
-        'business_name': "",
-        'services': []
-    }
-    ai_service = AIServiceFactory.get_service_by_config(basic_service_config)
+    ai_service = AIServiceFactory.get_service_by_config(_default_ai_service_config())
     
     # Check for story reply with emoji
     if "reply_to" in message and "story" in message["reply_to"]:
@@ -683,23 +702,20 @@ def _handle_user_message_flow(message_text: str, sender_username: str, brideside
     This rule applies to ALL clients automatically without needing prompt modifications.
     """
     # Initialize AI services
-    default_service_config = {
-        'service_name': 'openai',
-        'api_key': OPENAI_API_KEY or "",
-        'model': OPENAI_MODEL or "gpt-4o-mini",
-        'brideside_user_id': brideside_user.id,
-        'business_name': brideside_user.business_name or "",
-        'services': brideside_user.services or []
-    }
-
-    ai_service = AIServiceFactory.get_service_by_config(default_service_config)
+    ai_service = AIServiceFactory.get_service_by_config(
+        _default_ai_service_config(
+            brideside_user_id=brideside_user.id,
+            business_name=brideside_user.business_name or "",
+            services=brideside_user.services or [],
+        )
+    )
     # Extract access token from user object
     access_token = brideside_user.access_token or ""
     
     user_already_contacted = checkIfUserIsAlreadyContactedOrFriend(sender_id, access_token, brideside_user.id)
     if user_already_contacted:
-        logger.info("User %s has already been contacted before or a friend. Skipping.", sender_username)
-        return False, "User already contacted before"
+        logger.info("User %s conversation is outside re-engagement window. Skipping.", sender_username)
+        return True, "User conversation too old — skipped"
     
     logger.info("User %s is not already contacted or a friend. Checking if user already exists.", sender_username)
     
@@ -1410,11 +1426,10 @@ def _handle_user_message_flow(message_text: str, sender_username: str, brideside
                 person_owner_id = get_organization_owner_id(organization_id)
                 if person_owner_id is None:
                     logger.warning(
-                        "No organizations.owner_id for organization_id=%s; defaulting person owner_id to 69 for %s.",
+                        "No organizations.owner_id for organization_id=%s; leaving person owner_id NULL for %s.",
                         organization_id,
                         sender_username,
                     )
-                    person_owner_id = 69
                 
                 # Get category_id from organization
                 category_id = None
@@ -1454,11 +1469,10 @@ def _handle_user_message_flow(message_text: str, sender_username: str, brideside
                 deal_owner_id = get_organization_owner_id(organization_id)
                 if deal_owner_id is None:
                     logger.warning(
-                        "No organizations.owner_id for organization_id=%s; defaulting deal owner_id to 69 for %s.",
+                        "No organizations.owner_id for organization_id=%s; leaving deal owner_id NULL for %s.",
                         organization_id,
                         sender_username,
                     )
-                    deal_owner_id = 69
                 pipeline_id = int(brideside_user.pipeline_id) if brideside_user.pipeline_id else None
                 pipeline_id = resolve_pipeline_id_for_new_instagram_deal(
                     organization_id, brideside_user.id, pipeline_id
@@ -1828,7 +1842,7 @@ def _handle_user_message_flow(message_text: str, sender_username: str, brideside
                                 ('phone' in message_to_send.lower() or 'contact' in message_to_send.lower() or 'number' in message_to_send.lower())):
                                 if 'phone_number' in missing_fields:
                                     logger.info("📞 Asking for contact number - setting contact_number_asked flag to True")
-                                    update_deal_fields(deal, contact_number_asked=True)
+                                    update_deal_fields(to_int(deal), contact_number_asked=True)
                                     logger.info("✅ Updated contact_number_asked flag to True for deal %s", deal)
                             
                             # 🚨 EVENT DATE ASKED LOGIC
@@ -1836,7 +1850,7 @@ def _handle_user_message_flow(message_text: str, sender_username: str, brideside
                                 ('event date' in message_to_send.lower() or 'date' in message_to_send.lower() or 'when' in message_to_send.lower())):
                                 if 'event_date' in missing_fields:
                                     logger.info("📅 Asking for event date - setting event_date_asked flag to True")
-                                    update_deal_fields(deal, event_date_asked=True)
+                                    update_deal_fields(to_int(deal), event_date_asked=True)
                                     logger.info("✅ Updated event_date_asked flag to True for deal %s", deal)
                             
                             # 🚨 VENUE ASKED LOGIC
@@ -1844,7 +1858,7 @@ def _handle_user_message_flow(message_text: str, sender_username: str, brideside
                                 ('venue' in message_to_send.lower() or 'location' in message_to_send.lower() or 'where' in message_to_send.lower())):
                                 if 'venue' in missing_fields:
                                     logger.info("🏢 Asking for venue - setting venue_asked flag to True")
-                                    update_deal_fields(deal, venue_asked=True)
+                                    update_deal_fields(to_int(deal), venue_asked=True)
                                     logger.info("✅ Updated venue_asked flag to True for deal %s", deal)
                         else:
                             logger.info("No valid query or structured data detected. Not sending response.")
@@ -1942,11 +1956,10 @@ def _handle_user_message_flow(message_text: str, sender_username: str, brideside
             person_owner_id = get_organization_owner_id(organization_id)
             if person_owner_id is None:
                 logger.warning(
-                    "No organizations.owner_id for organization_id=%s; defaulting person owner_id to 69 for %s.",
+                    "No organizations.owner_id for organization_id=%s; leaving person owner_id NULL for %s.",
                     organization_id,
                     sender_username,
                 )
-                person_owner_id = 69
             
             # Get category_id from organization
             category_id = None
@@ -2184,11 +2197,10 @@ def _handle_user_message_flow(message_text: str, sender_username: str, brideside
         deal_owner_id = get_organization_owner_id(organization_id)
         if deal_owner_id is None:
             logger.warning(
-                "No organizations.owner_id for organization_id=%s; defaulting deal owner_id to 69 for %s.",
+                "No organizations.owner_id for organization_id=%s; leaving deal owner_id NULL for %s.",
                 organization_id,
                 sender_username,
             )
-            deal_owner_id = 69
         pipeline_id = int(brideside_user.pipeline_id) if brideside_user.pipeline_id else None
         pipeline_id = resolve_pipeline_id_for_new_instagram_deal(
             organization_id, brideside_user.id, pipeline_id

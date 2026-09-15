@@ -15,7 +15,7 @@ from utils.course_enquiry_keywords import is_customer_asking_vendor_service_menu
 class GroqService(AIServiceInterface):
     """Configurable Groq AI service for Instagram conversation handling."""
     
-    def __init__(self, api_key: str = "", model: str = GROQ_MODEL or "meta-llama/llama-4-scout-17b-16e-instruct", brideside_user_id: int = 1, business_name: str = "The Bride Side", services: List[str] = []):
+    def __init__(self, api_key: str = "", model: str = GROQ_MODEL or "allam-2-7b", brideside_user_id: int = 1, business_name: str = "The Bride Side", services: List[str] = []):
         # Initialize parent class
         effective_api_key = api_key or GROQ_API_KEY or ""
         super().__init__(effective_api_key, model, brideside_user_id)
@@ -374,8 +374,15 @@ CURRENT USER DETAILS:
                 # No update request, return NO_MESSAGE
                 fallback_message = "NO_MESSAGE"
         elif 'phone_number' in missing_fields:
+            greeting_tokens = {'hi', 'hii', 'hello', 'hey', 'hola', 'namaste'}
+            normalized = message_lower.strip().strip('!.?')
+            if normalized in greeting_tokens or normalized.startswith(('hi ', 'hello ', 'hey ')):
+                fallback_message = (
+                    "Hello! Thank you for reaching out to BOTCheck. "
+                    "Could you please share your event date, venue, and contact number?"
+                )
             # Handle special scenarios when phone is missing
-            if any(keyword in message_lower for keyword in ['edit', 'editing']):
+            elif any(keyword in message_lower for keyword in ['edit', 'editing']):
                 fallback_message = "Sure! Please share your contact number — our editing team will get in touch with you shortly."
             elif any(keyword in message_lower for keyword in ['budget', 'quote', 'price']) and any(keyword in message_lower for keyword in ['lakh', '1l', '100000', 'low']):
                 fallback_message = "Thanks for sharing your budget! Our packages usually start above ₹1 lakh to ensure premium quality and service. Let us know if there's flexibility — and please share your contact number so our team can guide you better ✨"
@@ -511,18 +518,30 @@ CURRENT USER DETAILS:
         
         Returns True if message is unrelated to services, else False.
         """
+        message_lower = (message or "").strip().lower()
+        greeting_tokens = {"hi", "hii", "hello", "hey", "hola", "namaste", "good morning", "good evening"}
+        normalized = message_lower.strip("!.?")
+        if normalized in greeting_tokens or normalized.startswith(("hi ", "hello ", "hey ")):
+            logger.info("Greeting detected (%r) — treating as service-related", message)
+            return False
+
         try:
             logger.info(f"services: {services}")
             services_text = ", ".join(services)
             logger.info(f"services_text: {services_text}")
 
             system_prompt = (
-                "You are an assistant helping classify Instagram DMs.\n"
+                "You are an assistant that classifies Instagram DMs.\n"
                 "Respond ONLY in this JSON format: { \"result\": true } or { \"result\": false }\n\n"
-                "Definition:\n"
-                "- Provided services: " + services_text + "\n"
-                "- Return false if the message is about any of these services (even indirectly).\n"
-                "- Return true if the message is unrelated to the above services (e.g. ads, collab, spam, other topics).\n"
+                "Rules:\n"
+                "- Provided services: " + services_text + "\n\n"
+                "Return { \"result\": false } if the message:\n"
+                "- Mentions or asks about any of the provided services (even indirectly)\n"
+                "- Is a greeting (e.g., 'Hi', 'Hello', 'Hii', 'Good morning')\n"
+                "- Includes any event details like event date, venue, event type, or phone number\n\n"
+                "Return { \"result\": true } if the message is clearly unrelated, such as:\n"
+                "- Advertising, spam, promotions, collab, influencer messages\n"
+                "- Messages with external links (e.g., https://, bit.ly)\n"
             )
 
             logger.info(f"System prompt: {system_prompt}")
