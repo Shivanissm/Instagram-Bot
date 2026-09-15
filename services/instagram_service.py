@@ -194,26 +194,29 @@ def checkIfUserIsAlreadyContactedOrFriend(user_id, access_token=None, brideside_
         try:
             messages = data['data'][0]['messages']['data']
             if not messages:
-                 # Check if the last message was sent today
-                logger.info("No Previous Conversations found for ",user_id)
-                return False  # No messages found
-            
-            # Get last message's created_time
-            last_created_time_str = messages[-1]['created_time']
-            
+                logger.info("No previous conversations found for %s", user_id)
+                return False  # No messages found — allow bot to reply
+
+            # Instagram returns messages newest-first; index 0 is the latest message.
+            latest_created_time_str = messages[0]['created_time']
+
             # Convert to datetime object (UTC)
-            last_created_time = datetime.strptime(last_created_time_str, "%Y-%m-%dT%H:%M:%S%z")
-            last_created_date = last_created_time.date()
+            latest_created_time = datetime.strptime(latest_created_time_str, "%Y-%m-%dT%H:%M:%S%z")
+            latest_created_date = latest_created_time.date()
 
-            # Get current UTC date
-            # today_utc = datetime.now(timezone.utc).date()
-            
-            # Date 5 days ago from today
-            # change the date range based on the last conversation if you want to send a message to the user
-            five_days_ago = (datetime.now(timezone.utc) - timedelta(days=100)).date()
+            # Skip only if the latest message is older than this window (re-engagement cutoff).
+            reengagement_cutoff = (datetime.now(timezone.utc) - timedelta(days=100)).date()
 
-            # Check if the last message is from yesterday or earlier
-            return last_created_date < five_days_ago
+            # True = skip bot (conversation too old); False = proceed with bot reply.
+            is_stale_conversation = latest_created_date < reengagement_cutoff
+            if is_stale_conversation:
+                logger.info(
+                    "Latest message for %s is from %s (cutoff %s) — skipping.",
+                    user_id,
+                    latest_created_date,
+                    reengagement_cutoff,
+                )
+            return is_stale_conversation
 
         except Exception as e:
             logger.error("Error checking date:", e)

@@ -65,8 +65,8 @@ def create_person_entry(name: str, instagram_id: Optional[str] = None,
             except (KeyError, AttributeError):
                 logger.warning(f"Invalid sub_source: {sub_source}, using None")
         
-        # Match deal creation: default owner when not provided
-        resolved_owner_id = 69 if owner_id is None else owner_id
+        # Use NULL when no owner is configured (e.g. CRM not live yet).
+        resolved_owner_id = owner_id
 
         new_person = Person(
             name=name,

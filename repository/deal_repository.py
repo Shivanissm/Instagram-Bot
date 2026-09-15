@@ -97,8 +97,8 @@ def create_deal(deal_name, pipeline_id, organization_id, contacted_to=None, pipe
 
     session: Session = SessionLocal()
     try:
-        # Default when caller passes no owner (org lookup failed, etc.)
-        resolved_owner_id = 69 if owner_id is None else owner_id
+        # Use NULL when no owner is configured (e.g. CRM not live yet).
+        resolved_owner_id = owner_id
 
         # Convert string enums to enum values
         status_enum = DealStatus[status.upper()] if status else DealStatus.IN_PROGRESS
@@ -143,6 +143,7 @@ def create_deal(deal_name, pipeline_id, organization_id, contacted_to=None, pipe
             city=None,
             venue_received=bool(venue_received or (venue and str(venue).strip())),
             phone_number=phone_number,
+            reentered_via_direct_message=False,
             created_by=CreatedBy.BOT,
             created_by_name="BOT",
             source_pipeline_id=pipeline_id,
